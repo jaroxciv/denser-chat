@@ -39,17 +39,27 @@ def concatenate_passage_files(output_dir):
     return final_passage_file
 
 
-def main(input_pdfs, output_dir, index_name):
+def read_sources_file(sources_file):
+    """Read PDF file paths from a sources file."""
+    with open(sources_file, 'r') as f:
+        # Read lines and split by whitespace to handle multiple files per line
+        pdfs = f.read().split()
+        return [pdf.strip() for pdf in pdfs if pdf.strip()]
+
+
+def main(sources_file, output_dir, index_name):
     # Ensure the output directory exists
     os.makedirs(output_dir, exist_ok=True)
+
+    # Read PDF files from sources file
+    input_pdfs = read_sources_file(sources_file)
+    if not input_pdfs:
+        print(f"No PDF files found in {sources_file}")
+        return
 
     # Process each PDF file
     passage_files = []
     for pdf_file in input_pdfs:
-        if not os.path.exists(pdf_file):
-            print(f"Warning: PDF file {pdf_file} does not exist. Skipping.")
-            continue
-
         passage_file = process_single_pdf(pdf_file, output_dir)
         passage_files.append(passage_file)
 
@@ -68,13 +78,12 @@ def main(input_pdfs, output_dir, index_name):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Process multiple PDFs and create an index.")
+    parser = argparse.ArgumentParser(description="Process PDFs listed in sources file and create an index.")
 
     parser.add_argument(
-        'input_pdfs',
+        'sources_file',
         type=str,
-        nargs='+',
-        help="Paths to the input PDF files. Can specify multiple files."
+        help="Path to the sources.txt file containing list of PDF files"
     )
     parser.add_argument(
         'output_dir',
@@ -89,4 +98,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    main(args.input_pdfs, args.output_dir, args.index_name)
+    main(args.sources_file, args.output_dir, args.index_name)

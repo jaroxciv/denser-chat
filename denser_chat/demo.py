@@ -1,7 +1,6 @@
 from openai import OpenAI
 import streamlit as st
 import time
-import io
 import os
 from denser_retriever.keyword import (
     ElasticKeywordSearch,
@@ -13,6 +12,8 @@ import json
 import logging
 import anthropic
 import argparse
+import requests
+import base64
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +35,6 @@ openai_client = OpenAI(api_key=openai_api_key)
 claude_client = anthropic.Client(api_key=claude_api_key)
 history_turns = 5
 
-
-
 prompt_default = "### Instructions:\n" \
                  "You are a professional AI assistant. The following context consists of an ordered list of sources. " \
                  "If you can find answers from the context, use the context to provide a response. " \
@@ -56,81 +55,146 @@ def get_annotation_pages(annotations_str):
     return []
 
 
-def pdf_viewer(file_path, page_num=0, annotations=None):
-    """Displays a single page of a PDF in Streamlit with optional annotations."""
-    doc = fitz.open(file_path)
-    page = doc[page_num]
+def get_pdf_display_url(pdf_path):
+    """Convert PDF path or URL to a data URL."""
+    if pdf_path.startswith(('http://', 'https://')):
+        # For URLs, download the content
+        response = requests.get(pdf_path)
+        pdf_content = response.content
+    else:
+        # For local files, read the content
+        with open(pdf_path, 'rb') as file:
+            pdf_content = file.read()
 
-    # Draw annotations (highlights) if any exist for the page
-    for ann in (annotations or []):
-        if ann['page'] == page_num:
-            rect = fitz.Rect(ann['x'], ann['y'], ann['x'] + ann['width'], ann['y'] + ann['height'])
-            # Highlight the area with light blue color
-            highlight = page.add_highlight_annot(rect)
-            highlight.set_colors(stroke=(1, 1, 0))  # Light blue
-            highlight.update()
-
-    # Render page as an image
-    # Increase zoom factor for better resolution
-    zoom = 2  # Adjust this value to change the resolution
-    mat = fitz.Matrix(zoom, zoom)
-    image = page.get_pixmap(matrix=mat)
-
-    # Use st.columns to create full width container
-    col1 = st.columns(1)[0]
-    with col1:
-        st.image(image.tobytes(), use_column_width=True)
+    # Convert to base64
+    base64_pdf = base64.b64encode(pdf_content).decode('utf-8')
+    return f"data:application/pdf;base64,{base64_pdf}"
 
 
 def render_pdf():
-    """Render PDF with annotations and handle page navigation."""
+    """Render PDF using PDF.js directly."""
     try:
-        if st.session_state.current_annotations:
-            annotations = []
-            try:
-                annotations = json.loads(st.session_state.current_annotations)
-                if st.session_state.clicked:
-                    st.session_state.current_page = annotations[0].get('page', 0)
-                    st.session_state.clicked = False
-            except json.JSONDecodeError:
-                st.error("Invalid annotation format")
+        if not st.session_state.current_pdf:
+            return
 
-        pdf_path = st.session_state.current_pdf
-        if pdf_path:
-            file = open(pdf_path, "rb")
-            doc = fitz.open(stream=io.BytesIO(file.read()), filetype="pdf")
+        # Get PDF content as data URL
+        pdf_url = get_pdf_display_url(st.session_state.current_pdf)
+
+        # Create viewer using PDF.js directly
+        viewer_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+            <style>
+                #pdf-container {{
+                    width: 100%;
+                    height: 800px;
+                    overflow: auto;
+                    background-color: #525659;
+                    text-align: center;
+                }}
+                canvas {{
+                    background-color: white;
+                    margin: 10px auto;
+                    display: block;
+                }}
+            </style>
+        </head>
+        <body>
+            <div id="pdf-container"></div>
+            <script>
+                // Initialize PDF.js
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+                // Load and render PDF
+                async function renderPDF() {{
+                    try {{
+                        const container = document.getElementById('pdf-container');
+                        const loadingTask = pdfjsLib.getDocument('{pdf_url}');
+                        const pdf = await loadingTask.promise;
+
+                        // Get current page
+                        const pageNum = {st.session_state.current_page + 1};
+                        const page = await pdf.getPage(pageNum);
+
+                        // Calculate scale to fit width
+                        const viewport = page.getViewport({{ scale: 1.5 }});
+
+                        // Create canvas
+                        const canvas = document.createElement('canvas');
+                        container.appendChild(canvas);
+                        const context = canvas.getContext('2d');
+
+                        canvas.height = viewport.height;
+                        canvas.width = viewport.width;
+
+                        // Render PDF page
+                        await page.render({{
+                            canvasContext: context,
+                            viewport: viewport
+                        }}).promise;
+
+                        // Add highlights if any
+                        const annotations = {st.session_state.current_annotations or '[]'};
+                        annotations.forEach(ann => {{
+                            if (ann.page === {st.session_state.current_page}) {{
+                                const rect = {{
+                                    x: ann.x * 1.5,
+                                    y: viewport.height - (ann.y + ann.height) * 1.5,
+                                    width: ann.width * 1.5,
+                                    height: ann.height * 1.5
+                                }};
+
+                                context.fillStyle = 'rgba(255, 255, 0, 0.3)';
+                                context.fillRect(rect.x, rect.y, rect.width, rect.height);
+                            }}
+                        }});
+
+                    }} catch (error) {{
+                        console.error('Error rendering PDF:', error);
+                        document.getElementById('pdf-container').textContent = 'Error loading PDF: ' + error.message;
+                    }}
+                }}
+
+                renderPDF();
+            </script>
+        </body>
+        </html>
+        """
+
+        # Display the viewer
+        st.components.v1.html(viewer_html, height=800)
+
+        # Navigation controls
+        nav_col1, nav_col2, nav_col3 = st.columns([1, 1, 1])
+
+        with nav_col1:
+            if st.button("Previous Page", key="prev_btn",
+                         disabled=(st.session_state.current_page <= 0)):
+                st.session_state.current_page -= 1
+                st.rerun()
+
+        with nav_col2:
+            if st.session_state.current_pdf.startswith(('http://', 'https://')):
+                response = requests.get(st.session_state.current_pdf)
+                stream = response.content
+                doc = fitz.open(stream=stream, filetype="pdf")
+            else:
+                doc = fitz.open(st.session_state.current_pdf)
             total_pages = doc.page_count
+            st.write(f"Page {st.session_state.current_page + 1} of {total_pages}")
+            doc.close()
 
-            # Navigation controls
-            nav_col1, nav_col2, nav_col3 = st.columns([1, 1, 1])
-
-            # Previous Page button
-            with nav_col1:
-                if st.button("Previous Page", key="prev_btn",
-                             disabled=(st.session_state.current_page <= 0)):
-                    st.session_state.current_page -= 1
-                    st.rerun()
-
-            # Page number display
-            with nav_col2:
-                st.write(f"Page {st.session_state.current_page + 1} of {total_pages}")
-
-            # Next Page button
-            with nav_col3:
-                if st.button("Next Page", key="next_btn",
-                             disabled=(st.session_state.current_page >= total_pages - 1)):
-                    st.session_state.current_page += 1
-                    st.rerun()
-
-            # Display the PDF viewer with the current page and annotations
-            pdf_viewer(
-                pdf_path,
-                page_num=st.session_state.current_page,
-                annotations=annotations
-            )
+        with nav_col3:
+            if st.button("Next Page", key="next_btn",
+                         disabled=(st.session_state.current_page >= total_pages - 1)):
+                st.session_state.current_page += 1
+                st.rerun()
 
     except Exception as e:
         st.error(f"Error rendering PDF: {str(e)}")
+        print(f"Error details: {str(e)}")  # For debugging
 
 
 def stream_response(selected_model, messages, passages):
@@ -283,9 +347,9 @@ def main(args):
             # Process chat completion
             prompt = prompt_default + f"### Query:\n{query}\n"
             if len(passages) > 0:
-                prompt += f"\n### Context:\n"
+                prompt += "\n### Context:\n"
                 for i, passage in enumerate(passages):
-                    prompt += f"#### Passage {i+1}:\n{passage[0].page_content}\n"
+                    prompt += f"#### Passage {i + 1}:\n{passage[0].page_content}\n"
 
             if args.language == "en":
                 context_limit = 4 * context_window
@@ -306,13 +370,15 @@ def main(args):
     with pdf_col:
         render_pdf()
 
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Denser Chat Demo')
     parser.add_argument('--index_name', type=str, default=None,
-                      help='Name of the Elasticsearch index to use')
+                        help='Name of the Elasticsearch index to use')
     parser.add_argument('--language', type=str, default='en',
-                      help='Language setting for context window (en or ch, default: en)')
+                        help='Language setting for context window (en or ch, default: en)')
     return parser.parse_args()
+
 
 if __name__ == "__main__":
     args = parse_args()

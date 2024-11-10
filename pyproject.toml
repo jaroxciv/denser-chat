@@ -23,6 +23,11 @@ denser-retriever = { git = "https://github.com/denser-org/denser-retriever.git",
 streamlit = "^1.39.0"
 anthropic = "^0.38.0"
 openai = "^1.54.1"
+weasyprint = "^63.0"
+beautifulsoup4 = "^4.12.3"
+requests = "^2.32.3"
+pdfkit = "^1.0.0"
+gradio = "^5.5.0"
 
 [tool.poetry.scripts]
 

@@ -3,6 +3,9 @@ import json
 from typing import List, Tuple, Dict
 import argparse
 import os
+import requests
+import tempfile
+from urllib.parse import urlparse
 
 
 class PDFPassageProcessor:
@@ -11,12 +14,43 @@ class PDFPassageProcessor:
         Initialize the PDF processor.
 
         Args:
-            input_path: Path to the input PDF file
+            input_path: Path or URL to the input PDF file
             chars_per_passage: Number of characters per passage
         """
         self.input_path = input_path
         self.chars_per_passage = chars_per_passage
-        self.doc = fitz.open(input_path)
+        self.temp_file = None
+
+        # If input is URL, download it first
+        if self._is_url(input_path):
+            self.temp_file = self._download_pdf(input_path)
+            self.doc = fitz.open(self.temp_file.name)
+        else:
+            self.doc = fitz.open(input_path)
+
+    def _is_url(self, path: str) -> bool:
+        """Check if the input path is a URL."""
+        try:
+            result = urlparse(path)
+            return all([result.scheme, result.netloc])
+        except ValueError:
+            return False
+
+    def _download_pdf(self, url: str) -> tempfile.NamedTemporaryFile:
+        """Download PDF from URL to a temporary file."""
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        response = requests.get(url, headers=headers, stream=True)
+        response.raise_for_status()
+
+        # Create temporary file
+        temp = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
+        for chunk in response.iter_content(chunk_size=8192):
+            if chunk:
+                temp.write(chunk)
+        temp.close()
+        return temp
 
     def extract_text_with_positions(self) -> List[Tuple[str, int, fitz.Rect, int]]:
         """
@@ -45,13 +79,7 @@ class PDFPassageProcessor:
 
     def create_passages(self, text_positions: List[Tuple[str, int, fitz.Rect, int]]) -> List[Dict]:
         """
-        Create passages from the extracted text and format them as dictionaries.
-
-        Args:
-            text_positions: List of text positions from extract_text_with_positions
-
-        Returns:
-            List of dictionaries containing passage information in the required format
+        Create passages with PDF.js compatible annotations.
         """
         passages = []
         current_passage = ""
@@ -59,10 +87,13 @@ class PDFPassageProcessor:
         char_count = 0
 
         for text, page_num, bbox, text_char_count in text_positions:
-            new_char_count = char_count + text_char_count + 1  # +1 for space
+            new_char_count = char_count + text_char_count + 1
+
+            # Get page dimensions for coordinate conversion
+            page = self.doc[page_num]
+            page_height = page.rect.height
 
             if new_char_count > self.chars_per_passage and current_passage:
-                # Create passage dictionary with current content
                 passage_dict = {
                     "page_content": current_passage.strip(),
                     "metadata": {
@@ -75,15 +106,15 @@ class PDFPassageProcessor:
                 }
                 passages.append(passage_dict)
 
-                # Reset for next passage
+                # Convert coordinates for PDF.js
                 current_passage = text + " "
                 current_positions = [{
                     "page": page_num,
                     "x": bbox.x0,
-                    "y": bbox.y0,
+                    "y": page_height - bbox.y1,  # Convert y-coordinate
                     "width": bbox.width,
                     "height": bbox.height,
-                    "color": "#FFFF00"  # Yellow highlight color
+                    "color": "#FFFF00"
                 }]
                 char_count = text_char_count + 1
             else:
@@ -91,14 +122,13 @@ class PDFPassageProcessor:
                 current_positions.append({
                     "page": page_num,
                     "x": bbox.x0,
-                    "y": bbox.y0,
+                    "y": page_height - bbox.y1,  # Convert y-coordinate
                     "width": bbox.width,
                     "height": bbox.height,
-                    "color": "#FFFF00"  # Yellow highlight color
+                    "color": "#FFFF00"
                 })
                 char_count = new_char_count
 
-        # Add the remaining text as the last passage
         if current_passage.strip():
             passage_dict = {
                 "page_content": current_passage.strip(),
@@ -123,7 +153,7 @@ class PDFPassageProcessor:
             output_path: Path where to save the output PDF
         """
         # Create a copy of the document for highlighting
-        output_doc = fitz.open(self.input_path)
+        output_doc = self.doc
 
         # Highlight each passage
         for passage in passages:
@@ -174,13 +204,16 @@ class PDFPassageProcessor:
         return passages
 
     def close(self):
-        """Close the PDF document."""
-        self.doc.close()
+        if self.temp_file:
+            try:
+                os.unlink(self.temp_file.name)
+            except:
+                pass
 
 
 def main():
     parser = argparse.ArgumentParser(description='Process PDF file into passages and highlight them.')
-    parser.add_argument('input_pdf', help='Path to the input PDF file')
+    parser.add_argument('input_pdf', help='Path or URL to the input PDF file')
     parser.add_argument('output_pdf', help='Path to save the highlighted PDF file')
     parser.add_argument('output_jsonl', help='Path to save the passages JSONL file')
     parser.add_argument('--chars', type=int, default=2000, help='Characters per passage (default: 1000)')

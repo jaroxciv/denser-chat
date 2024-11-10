@@ -46,11 +46,10 @@ cd denser_chat
 docker compose up -d
 ```
 
-We run the following command to build a chatbot index, where the first argument is the pdf files (two here), the second
-argument is the output directory, and the third argument is the index name.
+We run the following command to build a chatbot index. The first argument is the sources file which specify files used to build chatbots. Files can be local PDF files, URL PDFs, or URLs. The second argument is the output directory, and the third argument is the index name.
 
 ```bash
-python build.py ../examples/dpr.pdf ../examples/ti.pdf output test_index
+python build.py sources.txt output test_index
 ```
 
 This command will build an index `test_index` via denser-retriever. Next we can start a streamlit app with the following
@@ -59,7 +58,8 @@ command. As the app relies on ChatGPT or Claude API, we need to set their keys (
 ```bash
 export OPENAI_API_KEY="your-openai-key"
 export CLAUDE_API_KEY="your-claude-key"
-streamlit run demo.py -- --index_name test_index
+python -m http.server 8000 # start a simple http server to render PDFs
+streamlit run demo.py -- --index_name test_index # start the streamlit app on a different terminal
 ```
 
 Then you can start to ask questions such as "What is in-batch negative sampling ?" or "what parts have stop pins?". You can expect that the chatbot will return the answer with the source highlighted in the PDF.

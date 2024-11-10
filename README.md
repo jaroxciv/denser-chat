@@ -2,11 +2,13 @@
 
 <img src="demo.gif" width="800" alt="Denser Chat">
 
+Denser Chat is a chatbot that can answer questions from PDFs and webpages. This project is actively developed and maintained by [denser.ai](https://denser.ai). Feel free to contact support@denser.ai if you have feedback or questions.
+
 Main features:
 
-* Extract text and tables from PDFs.
+* Extract text and tables from PDFs and webpages.
 * Build a chatbot with [denser-retriever](https://github.com/denser-org/denser-retriever)
-* Support interactive Streamlit chatbot app with source highlighted in the PDF
+* Support interactive Streamlit chatbot app with source highlights in PDFs
 
 ## Installation
 
@@ -58,11 +60,22 @@ command. As the app relies on ChatGPT or Claude API, we need to set their keys (
 ```bash
 export OPENAI_API_KEY="your-openai-key"
 export CLAUDE_API_KEY="your-claude-key"
-python -m http.server 8000 # start a simple http server to render PDFs
-streamlit run demo.py -- --index_name test_index # start the streamlit app on a different terminal
 ```
 
-Then you can start to ask questions such as "What is in-batch negative sampling ?" or "what parts have stop pins?". You can expect that the chatbot will return the answer with the source highlighted in the PDF.
+In order to run the app, we need to start a local server to serve the PDFs. We can use the following command to start a server at root directory.
+
+```bash
+python -m http.server 8000 
+```
+
+Then we can start the streamlit app on a different terminal with the following command.
+
+```bash
+cd denser_chat
+streamlit run demo.py -- --index_name test_index 
+```
+
+Then we can start to ask questions such as "What is in-batch negative sampling ?" or "what parts have stop pins?". We can expect that the chatbot will return the answer with the source highlighted in the PDF.
 
 ### License
 

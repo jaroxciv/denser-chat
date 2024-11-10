@@ -3,68 +3,93 @@ import argparse
 import glob
 import shutil
 from denser_chat.indexer import Indexer
-from denser_chat.processor import PDFPassageProcessor
+from denser_chat.pdf_processor import PDFPassageProcessor
+from denser_chat.html_processor import HTMLPassageProcessor
+from urllib.parse import urlparse
 
+def is_url(path: str) -> bool:
+    """Check if the input path is a URL."""
+    try:
+        result = urlparse(path)
+        return all([result.scheme, result.netloc])
+    except ValueError:
+        return False
 
-def process_single_pdf(input_pdf, output_dir):
-    # Get base name of PDF file without extension
-    base_name = os.path.splitext(os.path.basename(input_pdf))[0]
+def is_html_url(url: str) -> bool:
+    """Check if URL is likely an HTML page (not a PDF)."""
+    return is_url(url) and not url.lower().endswith('.pdf')
 
-    # Define paths for this specific PDF
+def process_single_file(input_file, output_dir):
+    """Process a single file (PDF or HTML) and return passage file path."""
+    # Get base name for output files
+    if is_url(input_file):
+        base_name = os.path.splitext(os.path.basename(urlparse(input_file).path))[0]
+        if not base_name:  # Handle URLs without file paths
+            base_name = "webpage_" + str(hash(input_file))[:8]
+    else:
+        base_name = os.path.splitext(os.path.basename(input_file))[0]
+
+    # Define output path for passages
     passage_file = os.path.join(output_dir, f"{base_name}_passages.jsonl")
-    annotated_pdf = os.path.join(output_dir, f"{base_name}_annotated.pdf")
 
-    # Process the PDF
-    processor = PDFPassageProcessor(input_pdf, 1000)
-    passages = processor.process_pdf(annotated_pdf, passage_file)
-    print(f"Processed {len(passages)} passages from {input_pdf}")
+    if is_html_url(input_file):
+        # Process HTML page
+        processor = HTMLPassageProcessor(input_file, 1000)
+        passages = processor.process_html(passage_file)
+        print(f"Processed {len(passages)} passages from HTML: {input_file}")
+        print(f"Title: {processor.title}")
+    else:
+        # Process PDF file
+        annotated_pdf = os.path.join(output_dir, f"{base_name}_annotated.pdf")
+        processor = PDFPassageProcessor(input_file, 1000)
+        try:
+            passages = processor.process_pdf(annotated_pdf, passage_file)
+            print(f"Processed {len(passages)} passages from PDF: {input_file}")
+        finally:
+            processor.close()
 
     return passage_file
-
 
 def concatenate_passage_files(output_dir):
     """Concatenate all individual passage files into one final passages.jsonl"""
     final_passage_file = os.path.join(output_dir, "passages.jsonl")
 
-    # Use 'with' statement to ensure files are properly closed
     with open(final_passage_file, 'w') as outfile:
-        # Find all individual passage files
         passage_files = glob.glob(os.path.join(output_dir, "*_passages.jsonl"))
-
-        # Read and write content from each file
         for passage_file in passage_files:
             with open(passage_file, 'r') as infile:
                 shutil.copyfileobj(infile, outfile)
 
     return final_passage_file
 
-
 def read_sources_file(sources_file):
-    """Read PDF file paths from a sources file."""
+    """Read file paths from a sources file."""
     with open(sources_file, 'r') as f:
-        # Read lines and split by whitespace to handle multiple files per line
-        pdfs = f.read().split()
-        return [pdf.strip() for pdf in pdfs if pdf.strip()]
-
+        sources = f.read().split()
+        return [source.strip() for source in sources if source.strip()]
 
 def main(sources_file, output_dir, index_name):
     # Ensure the output directory exists
     os.makedirs(output_dir, exist_ok=True)
 
-    # Read PDF files from sources file
-    input_pdfs = read_sources_file(sources_file)
-    if not input_pdfs:
-        print(f"No PDF files found in {sources_file}")
+    # Read source files
+    input_files = read_sources_file(sources_file)
+    if not input_files:
+        print(f"No files found in {sources_file}")
         return
 
-    # Process each PDF file
+    # Process each file
     passage_files = []
-    for pdf_file in input_pdfs:
-        passage_file = process_single_pdf(pdf_file, output_dir)
-        passage_files.append(passage_file)
+    for input_file in input_files:
+        try:
+            passage_file = process_single_file(input_file, output_dir)
+            passage_files.append(passage_file)
+        except Exception as e:
+            print(f"Error processing {input_file}: {str(e)}")
+            continue
 
     if not passage_files:
-        print("No PDF files were successfully processed.")
+        print("No files were successfully processed.")
         return
 
     # Concatenate all passage files into one
@@ -76,24 +101,24 @@ def main(sources_file, output_dir, index_name):
     indexer.index(final_passage_file)
     print(f"Indexed passages to {index_name}")
 
-
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Process PDFs listed in sources file and create an index.")
+    parser = argparse.ArgumentParser(
+        description="Process PDFs and HTML pages listed in sources file and create an index.")
 
     parser.add_argument(
         'sources_file',
         type=str,
-        help="Path to the sources.txt file containing list of PDF files"
+        help="Path to the sources.txt file containing list of PDFs and URLs"
     )
     parser.add_argument(
         'output_dir',
         type=str,
-        help="Directory where output files (passages and annotated PDFs) will be stored."
+        help="Directory where output files will be stored"
     )
     parser.add_argument(
         'index_name',
         type=str,
-        help="Name for the index to be created."
+        help="Name for the index to be created"
     )
 
     args = parser.parse_args()

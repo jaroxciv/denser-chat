@@ -7,13 +7,11 @@ from denser_retriever.keyword import (
     create_elasticsearch_client,
 )
 from denser_retriever.retriever import DenserRetriever
-import fitz
 import json
 import logging
 import anthropic
 import argparse
-import requests
-import base64
+from urllib.parse import urlencode, quote
 
 logger = logging.getLogger(__name__)
 
@@ -44,157 +42,61 @@ prompt_default = "### Instructions:\n" \
                  "If the conversation involves casual talk or greetings, rely on your knowledge for an appropriate response. "
 
 
-def get_annotation_pages(annotations_str):
-    """Get all unique page numbers from annotations."""
+def create_viewer_url_by_passage(passage):
+    """Create a URL to open PDF.js viewer with annotation highlighting."""
+    base_url = "http://localhost:8000/viewer.html"
+
     try:
-        annotations = json.loads(annotations_str)
-        if annotations and isinstance(annotations, list):
-            return sorted(set(ann.get('page', 0) for ann in annotations))
-    except (json.JSONDecodeError, AttributeError, KeyError):
-        pass
-    return []
+        ann_list = json.loads(passage[0].metadata.get('annotations', '[]'))
+        pdf_url = passage[0].metadata.get('source', None)
+        if not pdf_url or not ann_list:
+            return None
+
+        # Convert each annotation to include page information
+        viewer_annotations = []
+        for ann in ann_list:
+            viewer_annotations.append({
+                'x': ann.get('x', 0),
+                'y': ann.get('y', 0),
+                'width': ann.get('width', 0),
+                'height': ann.get('height', 0),
+                'page': ann.get('page', 0)  # Include the page number for each annotation
+            })
+
+        # Create a single URL with all annotations
+        params = {
+            'file': pdf_url,
+            'annotations': json.dumps(viewer_annotations),
+            'pageNumber': viewer_annotations[0]['page'] + 1  # Start with first annotated page
+        }
+        return f"{base_url}?{urlencode(params, quote_via=quote)}"
+
+    except (json.JSONDecodeError, AttributeError) as e:
+        print(f"Error in create_viewer_url_by_passage: {e}")
+        return None
 
 
-def get_pdf_display_url(pdf_path):
-    """Convert PDF path or URL to a data URL."""
-    if pdf_path.startswith(('http://', 'https://')):
-        # For URLs, download the content
-        response = requests.get(pdf_path)
-        pdf_content = response.content
-    else:
-        # For local files, read the content
-        with open(pdf_path, 'rb') as file:
-            pdf_content = file.read()
+def post_process_html(full_response: str, passages: list) -> str:
+    """Similar to post_process but outputs HTML links that open in new tab."""
+    import re
 
-    # Convert to base64
-    base64_pdf = base64.b64encode(pdf_content).decode('utf-8')
-    return f"data:application/pdf;base64,{base64_pdf}"
-
-
-def render_pdf():
-    """Render PDF using PDF.js directly."""
-    try:
-        if not st.session_state.current_pdf:
-            return
-
-        # Get PDF content as data URL
-        pdf_url = get_pdf_display_url(st.session_state.current_pdf)
-
-        # Create viewer using PDF.js directly
-        viewer_html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-            <style>
-                #pdf-container {{
-                    width: 100%;
-                    height: 800px;
-                    overflow: auto;
-                    background-color: #525659;
-                    text-align: center;
-                }}
-                canvas {{
-                    background-color: white;
-                    margin: 10px auto;
-                    display: block;
-                }}
-            </style>
-        </head>
-        <body>
-            <div id="pdf-container"></div>
-            <script>
-                // Initialize PDF.js
-                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
-                // Load and render PDF
-                async function renderPDF() {{
-                    try {{
-                        const container = document.getElementById('pdf-container');
-                        const loadingTask = pdfjsLib.getDocument('{pdf_url}');
-                        const pdf = await loadingTask.promise;
-
-                        // Get current page
-                        const pageNum = {st.session_state.current_page + 1};
-                        const page = await pdf.getPage(pageNum);
-
-                        // Calculate scale to fit width
-                        const viewport = page.getViewport({{ scale: 1.5 }});
-
-                        // Create canvas
-                        const canvas = document.createElement('canvas');
-                        container.appendChild(canvas);
-                        const context = canvas.getContext('2d');
-
-                        canvas.height = viewport.height;
-                        canvas.width = viewport.width;
-
-                        // Render PDF page
-                        await page.render({{
-                            canvasContext: context,
-                            viewport: viewport
-                        }}).promise;
-
-                        // Add highlights if any
-                        const annotations = {st.session_state.current_annotations or '[]'};
-                        annotations.forEach(ann => {{
-                            if (ann.page === {st.session_state.current_page}) {{
-                                const rect = {{
-                                    x: ann.x * 1.5,
-                                    y: viewport.height - (ann.y + ann.height) * 1.5,
-                                    width: ann.width * 1.5,
-                                    height: ann.height * 1.5
-                                }};
-
-                                context.fillStyle = 'rgba(255, 255, 0, 0.3)';
-                                context.fillRect(rect.x, rect.y, rect.width, rect.height);
-                            }}
-                        }});
-
-                    }} catch (error) {{
-                        console.error('Error rendering PDF:', error);
-                        document.getElementById('pdf-container').textContent = 'Error loading PDF: ' + error.message;
-                    }}
-                }}
-
-                renderPDF();
-            </script>
-        </body>
-        </html>
-        """
-
-        # Display the viewer
-        st.components.v1.html(viewer_html, height=800)
-
-        # Navigation controls
-        nav_col1, nav_col2, nav_col3 = st.columns([1, 1, 1])
-
-        with nav_col1:
-            if st.button("Previous Page", key="prev_btn",
-                         disabled=(st.session_state.current_page <= 0)):
-                st.session_state.current_page -= 1
-                st.rerun()
-
-        with nav_col2:
-            if st.session_state.current_pdf.startswith(('http://', 'https://')):
-                response = requests.get(st.session_state.current_pdf)
-                stream = response.content
-                doc = fitz.open(stream=stream, filetype="pdf")
+    def replace_citation(match):
+        num = int(match.group(1)) - 1
+        if num < len(passages):
+            source = passages[num][0].metadata.get('source', '')
+            # Open a new tab for all URLs except PDFs
+            if source.startswith(('http://', 'https://')) and not source.endswith('.pdf'):
+                return f'<a href="{source}" target="_blank">[{num + 1}]</a>'
             else:
-                doc = fitz.open(st.session_state.current_pdf)
-            total_pages = doc.page_count
-            st.write(f"Page {st.session_state.current_page + 1} of {total_pages}")
-            doc.close()
+                viewer_url = create_viewer_url_by_passage(passages[num])
+                if viewer_url:
+                    return f'<a href="{viewer_url}" target="_blank">[{num + 1}]</a>'
+                else:
+                    return f'[{num + 1}]'
+        return match.group(0)
 
-        with nav_col3:
-            if st.button("Next Page", key="next_btn",
-                         disabled=(st.session_state.current_page >= total_pages - 1)):
-                st.session_state.current_page += 1
-                st.rerun()
-
-    except Exception as e:
-        st.error(f"Error rendering PDF: {str(e)}")
-        print(f"Error details: {str(e)}")  # For debugging
+    processed_text = re.sub(r'\[(\d+)\]', replace_citation, full_response)
+    return processed_text
 
 
 def stream_response(selected_model, messages, passages):
@@ -229,15 +131,13 @@ def stream_response(selected_model, messages, passages):
             message_placeholder.markdown(full_response, unsafe_allow_html=True)
 
     # Update session state
+    full_response = post_process_html(full_response, passages)
     st.session_state.messages.append({"role": "assistant", "content": full_response})
     st.session_state.passages = passages
-
-    # Rerun to show the updated UI with passages
-    st.rerun()
+    st.rerun()  # Add rerun here to show links immediately
 
 
 def main(args):
-    # Set page configuration to use wide mode
     st.set_page_config(layout="wide")
 
     global retriever
@@ -262,113 +162,61 @@ def main(args):
     # Initialize session states
     if 'selected_model' not in st.session_state:
         st.session_state.selected_model = "Claude 3.5"  # Default model
-    if 'clicked' not in st.session_state:
-        st.session_state.clicked = False
-    if 'current_pdf' not in st.session_state:
-        st.session_state.current_pdf = None
-    if 'current_annotations' not in st.session_state:
-        st.session_state.current_annotations = None
-    if 'current_page' not in st.session_state:
-        st.session_state.current_page = 0
     if "messages" not in st.session_state:
         st.session_state.messages = []
     if "passages" not in st.session_state:
         st.session_state.passages = []
 
-    # Create two columns for main content and PDF viewer
-    main_col, pdf_col = st.columns([1, 1])
+    # Create header with title and model selector
+    st.title("Denser Chat Demo")
+    selected_model_name = st.selectbox(
+        "Select Model",
+        options=list(MODEL_OPTIONS.keys()),
+        key="model_selector",
+        index=list(MODEL_OPTIONS.keys()).index(st.session_state.selected_model)
+    )
+    st.session_state.selected_model = selected_model_name
 
-    with main_col:
-        # Create a header row with title and model selector
-        st.title("Denser Chat Demo")
-        selected_model_name = st.selectbox(
-            "Select Model",
-            options=list(MODEL_OPTIONS.keys()),
-            key="model_selector",
-            index=list(MODEL_OPTIONS.keys()).index(st.session_state.selected_model)
-        )
-        st.session_state.selected_model = selected_model_name
+    st.caption(
+        "Try question \"What is example domain?\", \"What is in-batch negative sampling?\" or \"what parts have stop pins?\"")
+    st.divider()
 
-        st.caption(
-            "Try question \"What is in-batch negative sampling ?\" or \"what parts have stop pins?\"")
-        st.divider()
+    for i in range(len(st.session_state.messages)):
+        with st.chat_message(st.session_state.messages[i]["role"]):
+            st.markdown(st.session_state.messages[i]["content"], unsafe_allow_html=True)
 
-        if len(st.session_state.messages) > 1:
-            with st.chat_message(st.session_state.messages[-2]["role"]):
-                st.markdown(st.session_state.messages[-2]["content"], unsafe_allow_html=True)
+    # Handle user input
+    query = st.chat_input("Please input your question")
+    if query:
+        with st.chat_message("user"):
+            st.markdown(query)
 
-        # Display passages and add annotation buttons
-        if st.session_state.passages:  # Show passages if they exist
-            num_passages = len(st.session_state.passages)
-            buttons_per_row = 5
+        start_time = time.time()
+        passages = retriever.retrieve(query, 5, {})
+        retrieve_time_sec = time.time() - start_time
+        st.write(f"Retrieve time: {retrieve_time_sec:.3f} sec.")
 
-            # Calculate number of rows needed
-            num_rows = (num_passages + buttons_per_row - 1) // buttons_per_row
+        # Process chat completion
+        prompt = prompt_default + f"### Query:\n{query}\n"
+        if len(passages) > 0:
+            prompt += "\n### Context:\n"
+            for i, passage in enumerate(passages):
+                prompt += f"#### Passage {i + 1}:\n{passage[0].page_content}\n"
 
-            for row in range(num_rows):
-                # Create columns for this row
-                start_idx = row * buttons_per_row
-                end_idx = min(start_idx + buttons_per_row, num_passages)
-                num_buttons_this_row = end_idx - start_idx
+        if args.language == "en":
+            context_limit = 4 * context_window
+        else:
+            context_limit = context_window
+        prompt = prompt[:context_limit] + "### Response:"
 
-                # Create columns for this row
-                cols = st.columns(num_buttons_this_row)
+        # Prepare messages for chat completion
+        messages = st.session_state.messages[-history_turns * 2:]
+        messages.append({"role": "user", "content": prompt})
 
-                # Add buttons to columns
-                for col_idx, passage_idx in enumerate(range(start_idx, end_idx)):
-                    passage = st.session_state.passages[passage_idx]
-                    annotations = passage[0].metadata.get('annotations', '[]')
-                    pages = get_annotation_pages(annotations)
-                    page_str = f"Source {passage_idx + 1}" if pages else "No annotations"
-                    # print(f"Passage {passage_idx}: {passage[0].page_content}")
+        # Add user message to history
+        st.session_state.messages.append({"role": "user", "content": query})
 
-                    with cols[col_idx]:
-                        if st.button(page_str, key=f"btn_page_{passage_idx}"):
-                            st.session_state.current_pdf = passage[0].metadata.get('source', None)
-                            st.session_state.current_annotations = annotations
-                            st.session_state.clicked = True
-                            st.rerun()
-
-        if len(st.session_state.messages) > 0:
-            with st.chat_message(st.session_state.messages[-1]["role"]):
-                st.markdown(st.session_state.messages[-1]["content"], unsafe_allow_html=True)
-
-        # Handle user input
-        query = st.chat_input("Please input your question")
-        if query:
-            with st.chat_message("user"):
-                st.markdown(query)
-
-            start_time = time.time()
-            passages = retriever.retrieve(query, 5, {})
-            retrieve_time_sec = time.time() - start_time
-            st.write(f"Retrieve time: {retrieve_time_sec:.3f} sec.")
-
-            # Process chat completion
-            prompt = prompt_default + f"### Query:\n{query}\n"
-            if len(passages) > 0:
-                prompt += "\n### Context:\n"
-                for i, passage in enumerate(passages):
-                    prompt += f"#### Passage {i + 1}:\n{passage[0].page_content}\n"
-
-            if args.language == "en":
-                context_limit = 4 * context_window
-            else:
-                context_limit = context_window
-            prompt = prompt[:context_limit] + "### Response:"
-
-            # Prepare messages for chat completion
-            messages = st.session_state.messages[-history_turns * 2:]
-            messages.append({"role": "user", "content": prompt})
-
-            # Add user message to history
-            st.session_state.messages.append({"role": "user", "content": query})
-
-            stream_response(MODEL_OPTIONS[selected_model_name], messages, passages)
-
-    # Render PDF viewer in the second column
-    with pdf_col:
-        render_pdf()
+        stream_response(MODEL_OPTIONS[selected_model_name], messages, passages)
 
 
 def parse_args():
@@ -377,6 +225,8 @@ def parse_args():
                         help='Name of the Elasticsearch index to use')
     parser.add_argument('--language', type=str, default='en',
                         help='Language setting for context window (en or ch, default: en)')
+    parser.add_argument('--static_dir', type=str, default='static',
+                        help='Directory where PDF.js and PDFs are served from')
     return parser.parse_args()
 
 

@@ -27,6 +27,7 @@ weasyprint = "^63.0"
 beautifulsoup4 = "^4.12.3"
 requests = "^2.32.3"
 pdfkit = "^1.0.0"
+gradio = "^5.5.0"
 
 [tool.poetry.scripts]
 

@@ -1,4 +1,5 @@
 ../examples/dpr.pdf
 ../examples/ti.pdf
+../examples/blstm_crf_paper.pdf
 https://www.i-pex.com/sites/default/files/pdf/Matrix_Micro-Coaxial_Discrete-Wire_Connector_E.pdf
 https://example.com/

@@ -36,7 +36,7 @@ history_turns = 5
 prompt_default = "### Instructions:\n" \
                  "You are a professional AI assistant. The following context consists of an ordered list of sources. " \
                  "If you can find answers from the context, use the context to provide a response. " \
-                 "You must cite passages in square brackets [X] where X is the passage number (the ranking order of provided passages)." \
+                 "You must cite passages in square brackets [X] where X is the passage number (do not include passage word, only digit numbers)." \
                  "If you cannot find the answer from the sources, use your knowledge to come up a reasonable answer. " \
                  "If the query asks to summarize the file or uploaded file, provide a summarization based on the provided sources. " \
                  "If the conversation involves casual talk or greetings, rely on your knowledge for an appropriate response. "
@@ -131,9 +131,13 @@ def stream_response(selected_model, messages, passages):
             message_placeholder.markdown(full_response, unsafe_allow_html=True)
 
     # Update session state
-    full_response = post_process_html(full_response, passages)
-    st.session_state.messages.append({"role": "assistant", "content": full_response})
+    print(f"### messages\n: {messages}\n")
+    print(f"### full_response\n: {full_response}\n")
+    processed_response = post_process_html(full_response, passages)
+    print(f"### processed_response\n: {processed_response}\n")
+    st.session_state.messages.append({"role": "assistant", "content": processed_response})
     st.session_state.passages = passages
+
     st.rerun()  # Add rerun here to show links immediately
 
 

@@ -9,6 +9,7 @@ Main features:
 * Extract text and tables from PDFs and webpages.
 * Build a chatbot with [denser-retriever](https://github.com/denser-org/denser-retriever)
 * Support interactive Streamlit chatbot app with source highlights in PDFs
+* Elasticsearch is used for fast retrieval on indexed data, and the elastic keyword enable searching or filtering based on specific terms or criteria within that indexed data.
 
 ## Installation
 
@@ -23,7 +24,10 @@ Go to the project directory and start a virtual environment. Make sure your pyth
 ```bash
 cd denser-chat
 python -m venv .venv
+# For Linux/Mac users
 source .venv/bin/activate
+# For Windows users
+.\.venv\Scripts\activate.bat
 ```
 
 Run the following command to install the required packages.
@@ -45,7 +49,7 @@ which are required for denser-retriever.
 
 ```bash
 cd denser_chat
-docker compose up -d
+docker compose -f docker-compose.yml up -d
 ```
 
 We run the following command to build a chatbot index. The first argument is the sources file which specify files used to build chatbots. Files can be local PDF files, URL PDFs, or URLs. The second argument is the output directory, and the third argument is the index name.

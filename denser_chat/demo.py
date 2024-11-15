@@ -12,9 +12,10 @@ import logging
 import anthropic
 import argparse
 from urllib.parse import urlencode, quote
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
-
+load_dotenv()
 # Define available models
 MODEL_OPTIONS = {
     "GPT-4": "gpt-4o",
@@ -26,7 +27,7 @@ openai_api_key = os.getenv('OPENAI_API_KEY')
 claude_api_key = os.getenv('CLAUDE_API_KEY')
 
 # Check if API keys are set
-if not openai_api_key and not claude_api_key:
+if not (openai_api_key or claude_api_key):
     raise ValueError("Neither OPENAI_API_KEY nor CLAUDE_API_KEY environment variables is set")
 
 openai_client = OpenAI(api_key=openai_api_key)
@@ -100,6 +101,15 @@ def post_process_html(full_response: str, passages: list) -> str:
 
 
 def stream_response(selected_model, messages, passages):
+
+    """
+    Stream assistant response based on the selected model.
+    
+    Parameters:
+    - selected_model_name: The name of the model as a key in MODEL_OPTIONS from user.
+    - messages: List of messages for the chat input.
+    """
+
     # Generate and display assistant response
     with st.chat_message("assistant"):
         message_placeholder = st.empty()

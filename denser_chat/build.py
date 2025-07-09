@@ -7,6 +7,7 @@ from denser_chat.pdf_processor import PDFPassageProcessor
 from denser_chat.html_processor import HTMLPassageProcessor
 from urllib.parse import urlparse
 
+
 def is_url(path: str) -> bool:
     """Check if the input path is a URL."""
     try:
@@ -15,9 +16,11 @@ def is_url(path: str) -> bool:
     except ValueError:
         return False
 
+
 def is_html_url(url: str) -> bool:
     """Check if URL is likely an HTML page (not a PDF)."""
-    return is_url(url) and not url.lower().endswith('.pdf')
+    return is_url(url) and not url.lower().endswith(".pdf")
+
 
 def process_single_file(input_file, output_dir):
     """Process a single file (PDF or HTML) and return passage file path."""
@@ -50,23 +53,26 @@ def process_single_file(input_file, output_dir):
 
     return passage_file
 
+
 def concatenate_passage_files(output_dir):
     """Concatenate all individual passage files into one final passages.jsonl"""
     final_passage_file = os.path.join(output_dir, "passages.jsonl")
 
-    with open(final_passage_file, 'w') as outfile:
+    with open(final_passage_file, "w") as outfile:
         passage_files = glob.glob(os.path.join(output_dir, "*_passages.jsonl"))
         for passage_file in passage_files:
-            with open(passage_file, 'r') as infile:
+            with open(passage_file, "r") as infile:
                 shutil.copyfileobj(infile, outfile)
 
     return final_passage_file
 
+
 def read_sources_file(sources_file):
     """Read file paths from a sources file."""
-    with open(sources_file, 'r') as f:
+    with open(sources_file, "r") as f:
         sources = f.read().split()
         return [source.strip() for source in sources if source.strip()]
+
 
 def main(sources_file, output_dir, index_name):
     # Ensure the output directory exists
@@ -101,25 +107,21 @@ def main(sources_file, output_dir, index_name):
     indexer.index(final_passage_file)
     print(f"Indexed passages to {index_name}")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Process PDFs and HTML pages listed in sources file and create an index.")
+        description="Process PDFs and HTML pages listed in sources file and create an index."
+    )
 
     parser.add_argument(
-        'sources_file',
+        "sources_file",
         type=str,
-        help="Path to the sources.txt file containing list of PDFs and URLs"
+        help="Path to the sources.txt file containing list of PDFs and URLs",
     )
     parser.add_argument(
-        'output_dir',
-        type=str,
-        help="Directory where output files will be stored"
+        "output_dir", type=str, help="Directory where output files will be stored"
     )
-    parser.add_argument(
-        'index_name',
-        type=str,
-        help="Name for the index to be created"
-    )
+    parser.add_argument("index_name", type=str, help="Name for the index to be created")
 
     args = parser.parse_args()
 

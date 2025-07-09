@@ -39,13 +39,13 @@ class PDFPassageProcessor:
     def _download_pdf(self, url: str) -> tempfile.NamedTemporaryFile:
         """Download PDF from URL to a temporary file."""
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
         response = requests.get(url, headers=headers, stream=True)
         response.raise_for_status()
 
         # Create temporary file
-        temp = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
+        temp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
         for chunk in response.iter_content(chunk_size=8192):
             if chunk:
                 temp.write(chunk)
@@ -73,11 +73,15 @@ class PDFPassageProcessor:
                             if text.strip():  # Skip empty text
                                 bbox = fitz.Rect(span["bbox"])
                                 char_count = len(text)
-                                text_positions.append((text, page_num, bbox, char_count))
+                                text_positions.append(
+                                    (text, page_num, bbox, char_count)
+                                )
 
         return text_positions
 
-    def create_passages(self, text_positions: List[Tuple[str, int, fitz.Rect, int]]) -> List[Dict]:
+    def create_passages(
+        self, text_positions: List[Tuple[str, int, fitz.Rect, int]]
+    ) -> List[Dict]:
         """
         Create passages with PDF.js compatible annotations.
         """
@@ -100,33 +104,37 @@ class PDFPassageProcessor:
                         "source": self.input_path,
                         "title": "",
                         "pid": str(len(passages)),
-                        "annotations": json.dumps(current_positions)
+                        "annotations": json.dumps(current_positions),
                     },
-                    "type": "Document"
+                    "type": "Document",
                 }
                 passages.append(passage_dict)
 
                 # Convert coordinates for PDF.js
                 current_passage = text + " "
-                current_positions = [{
-                    "page": page_num,
-                    "x": bbox.x0,
-                    "y": page_height - bbox.y1,  # Convert y-coordinate
-                    "width": bbox.width,
-                    "height": bbox.height,
-                    "color": "#FFFF00"
-                }]
+                current_positions = [
+                    {
+                        "page": page_num,
+                        "x": bbox.x0,
+                        "y": page_height - bbox.y1,  # Convert y-coordinate
+                        "width": bbox.width,
+                        "height": bbox.height,
+                        "color": "#FFFF00",
+                    }
+                ]
                 char_count = text_char_count + 1
             else:
                 current_passage += text + " "
-                current_positions.append({
-                    "page": page_num,
-                    "x": bbox.x0,
-                    "y": page_height - bbox.y1,  # Convert y-coordinate
-                    "width": bbox.width,
-                    "height": bbox.height,
-                    "color": "#FFFF00"
-                })
+                current_positions.append(
+                    {
+                        "page": page_num,
+                        "x": bbox.x0,
+                        "y": page_height - bbox.y1,  # Convert y-coordinate
+                        "width": bbox.width,
+                        "height": bbox.height,
+                        "color": "#FFFF00",
+                    }
+                )
                 char_count = new_char_count
 
         if current_passage.strip():
@@ -136,9 +144,9 @@ class PDFPassageProcessor:
                     "source": self.input_path,
                     "title": "",
                     "pid": str(len(passages)),
-                    "annotations": json.dumps(current_positions)
+                    "annotations": json.dumps(current_positions),
                 },
-                "type": "Document"
+                "type": "Document",
             }
             passages.append(passage_dict)
 
@@ -164,7 +172,7 @@ class PDFPassageProcessor:
                     annotation["x"],
                     annotation["y"],
                     annotation["x"] + annotation["width"],
-                    annotation["y"] + annotation["height"]
+                    annotation["y"] + annotation["height"],
                 )
                 highlight = page.add_highlight_annot(bbox)
                 highlight.set_colors(stroke=(1, 1, 0))  # Yellow color
@@ -194,9 +202,9 @@ class PDFPassageProcessor:
             os.makedirs(output_dir, exist_ok=True)
 
         # Save passages to JSONL file
-        with open(output_jsonl_path, 'w', encoding='utf-8') as f:
+        with open(output_jsonl_path, "w", encoding="utf-8") as f:
             for passage in passages:
-                f.write(json.dumps(passage, ensure_ascii=False) + '\n')
+                f.write(json.dumps(passage, ensure_ascii=False) + "\n")
 
         # Highlight passages in the PDF
         self.highlight_passages(passages, output_pdf_path)
@@ -212,11 +220,15 @@ class PDFPassageProcessor:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Process PDF file into passages and highlight them.')
-    parser.add_argument('input_pdf', help='Path or URL to the input PDF file')
-    parser.add_argument('output_pdf', help='Path to save the highlighted PDF file')
-    parser.add_argument('output_jsonl', help='Path to save the passages JSONL file')
-    parser.add_argument('--chars', type=int, default=2000, help='Characters per passage (default: 1000)')
+    parser = argparse.ArgumentParser(
+        description="Process PDF file into passages and highlight them."
+    )
+    parser.add_argument("input_pdf", help="Path or URL to the input PDF file")
+    parser.add_argument("output_pdf", help="Path to save the highlighted PDF file")
+    parser.add_argument("output_jsonl", help="Path to save the passages JSONL file")
+    parser.add_argument(
+        "--chars", type=int, default=2000, help="Characters per passage (default: 1000)"
+    )
 
     args = parser.parse_args()
 

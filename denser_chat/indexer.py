@@ -17,12 +17,13 @@ class Indexer:
             index_name=index_name,
             keyword_search=ElasticKeywordSearch(
                 top_k=100,
-                es_connection=create_elasticsearch_client(url="http://localhost:9200",
-                                                          username="elastic",
-                                                          password="",
-                                                          ),
+                es_connection=create_elasticsearch_client(
+                    url="http://localhost:9200",
+                    username="elastic",
+                    password="",
+                ),
                 drop_old=True,
-                analysis="default"  # default or ik
+                analysis="default",  # default or ik
             ),
             vector_db=None,
             reranker=None,
@@ -52,4 +53,3 @@ class Indexer:
     def retrieve(self, query, top_k, meta_data):
         passages = self.retriever.retrieve(query, top_k, meta_data)
         return passages
-

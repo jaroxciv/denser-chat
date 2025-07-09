@@ -24,7 +24,7 @@ class HTMLPassageProcessor:
     def _load_page(self) -> str:
         """Load HTML content."""
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
         response = requests.get(self.url, headers=headers)
         response.raise_for_status()
@@ -32,7 +32,7 @@ class HTMLPassageProcessor:
 
     def _get_title(self) -> str:
         """Extract page title from HTML content."""
-        soup = BeautifulSoup(self.content, 'html.parser')
+        soup = BeautifulSoup(self.content, "html.parser")
         if soup.title:
             return soup.title.string.strip()
         return ""
@@ -65,9 +65,9 @@ class HTMLPassageProcessor:
                     "metadata": {
                         "source": self.url,
                         "title": self.title,
-                        "pid": str(len(passages))
+                        "pid": str(len(passages)),
                     },
-                    "type": "Document"
+                    "type": "Document",
                 }
                 passages.append(passage_dict)
 
@@ -85,9 +85,9 @@ class HTMLPassageProcessor:
                 "metadata": {
                     "source": self.url,
                     "title": self.title,
-                    "pid": str(len(passages))
+                    "pid": str(len(passages)),
                 },
-                "type": "Document"
+                "type": "Document",
             }
             passages.append(passage_dict)
 
@@ -109,19 +109,20 @@ class HTMLPassageProcessor:
             os.makedirs(output_dir, exist_ok=True)
 
         # Save passages to JSONL file
-        with open(output_jsonl_path, 'w', encoding='utf-8') as f:
+        with open(output_jsonl_path, "w", encoding="utf-8") as f:
             for passage in passages:
-                f.write(json.dumps(passage, ensure_ascii=False) + '\n')
+                f.write(json.dumps(passage, ensure_ascii=False) + "\n")
 
         return passages
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Process HTML page into passages.')
-    parser.add_argument('input_url', help='URL of the HTML page')
-    parser.add_argument('output_jsonl', help='Path to save the passages JSONL file')
-    parser.add_argument('--chars', type=int, default=1000,
-                        help='Characters per passage (default: 1000)')
+    parser = argparse.ArgumentParser(description="Process HTML page into passages.")
+    parser.add_argument("input_url", help="URL of the HTML page")
+    parser.add_argument("output_jsonl", help="Path to save the passages JSONL file")
+    parser.add_argument(
+        "--chars", type=int, default=1000, help="Characters per passage (default: 1000)"
+    )
 
     args = parser.parse_args()
 
